@@ -2,6 +2,7 @@ package github.javaguide.config;
 
 import github.javaguide.registry.zk.util.CuratorUtils;
 import github.javaguide.remoting.transport.netty.server.NettyServer;
+import github.javaguide.utils.concurrent.threadpool.ThreadPoolFactoryUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.net.InetAddress;
@@ -12,7 +13,7 @@ import java.net.UnknownHostException;
 public class CustomShutDownHook {
     private static final CustomShutDownHook CUSTOM_SHUT_DOWN_HOOK = new CustomShutDownHook();
 
-    public CustomShutDownHook getInstance() {
+    public static CustomShutDownHook getInstance() {
         return CUSTOM_SHUT_DOWN_HOOK;
     }
 
@@ -25,7 +26,7 @@ public class CustomShutDownHook {
             } catch (UnknownHostException ignored) {
 
             }
-
+            ThreadPoolFactoryUtil.shutdownAllThreadPool();
         }));
     }
 }
