@@ -1,6 +1,5 @@
 package github.javaguide.extension;
 
-import github.javaguide.factory.SingletonFactory;
 import github.javaguide.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -15,35 +14,37 @@ import java.util.concurrent.ConcurrentHashMap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Slf4j
-public final class ExtensionLoader<T> {
+public class ExtensionLoader<T> {
 
-    private final Map<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<>();
-    private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<>();
+    private static volatile Map<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<>();
 
     private static final String SERVICE_DIRECTORY = "META-INF/extensions/";
 
-    private static final Map<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<>();
+    // 对比一下private volatile Map<String, T> cachedInstances = new ConcurrentHashMap<>();
+    private Map<String, Holder> cachedInstances = new ConcurrentHashMap<>();
 
-    private final Class<?> type;
-
-    private ExtensionLoader(Class<?> type) {
-        this.type = type;
+    private Class<T> clz;
+    private ExtensionLoader(Class<T> clz) {
+        this.clz = clz;
     }
 
-    public static <S> ExtensionLoader<S> getExtensionLoader(Class<S> type) {
-        if(type == null) {
+    public static <S> ExtensionLoader<S> getExtensionLoader(Class<S> clz) {
+        if(clz == null) {
             throw new IllegalArgumentException("Extension type should not be null.");
         }
-        if(!type.isInterface()) {
+        if (!clz.isInterface()) {
+            // 需要是接口
             throw new IllegalArgumentException("Extension type must be an interface.");
         }
-        if(type.getAnnotation(SPI.class) == null) {
+        if (clz.getAnnotation(SPI.class) == null) {
+            // 类上需要包含SPI注解
             throw new IllegalArgumentException("Extension type must be annotated by @SPI");
         }
-        ExtensionLoader<S> extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(type);
+
+        ExtensionLoader<S> extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(clz);
         if(extensionLoader == null) {
-            EXTENSION_LOADERS.putIfAbsent(type, new ExtensionLoader<S>(type));
-            extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(type);
+            EXTENSION_LOADERS.putIfAbsent(clz, new ExtensionLoader<S>(clz));
+            extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(clz);
         }
         return extensionLoader;
     }
@@ -52,91 +53,71 @@ public final class ExtensionLoader<T> {
         if(StringUtil.isBlank(name)) {
             throw new IllegalArgumentException("Extension name should not be null or empty.");
         }
-        Holder<Object> holder = cachedInstances.get(name);
+
+        Holder holder = cachedInstances.get(name);
         if(holder == null) {
             cachedInstances.putIfAbsent(name, new Holder());
             holder = cachedInstances.get(name);
         }
-        Object instance = holder.get();
-        if(instance == null) {
+        Object extension = holder.get();
+        if(extension == null) {
             synchronized (holder) {
-                instance = holder.get();
-                if(instance == null) {
-                    instance = createExtension(name);
-                    holder.set(instance);
+                extension = holder.get();
+                if(extension == null) {
+                    extension = initExtension(name);
+                    if(extension == null) {
+                        throw new RuntimeException("can not get extension instance by name " + name);
+                    }
+                    holder.set(extension);
                 }
             }
         }
-        return (T) instance;
+        return (T) extension;
     }
 
-    private T createExtension(String name) {
-        Class<?> clazz = getExtensionClasses().get(name);
-        if(clazz == null) {
-            throw new RuntimeException("Extension class not found: " + name);
-        }
-        return (T) SingletonFactory.getInstance(clazz);
-    }
-
-    private Map<String, Class<?>> getExtensionClasses() {
-        Map<String, Class<?>> classes = cachedClasses.get();
-        if(classes == null) {
-            synchronized (cachedClasses) {
-                classes = cachedClasses.get();
-                if(classes == null) {
-                    classes = new ConcurrentHashMap<>();
-                    loadDirectory(classes);
-                    cachedClasses.set(classes);
-                }
-            }
-        }
-        return classes;
-    }
-
-    private void loadDirectory(Map<String, Class<?>> classes) {
-        String fileName = ExtensionLoader.SERVICE_DIRECTORY + type.getName();
+    private T initExtension(String name) {
+        String fileName = ExtensionLoader.SERVICE_DIRECTORY + clz.getName();
         try {
             Enumeration<URL> urls;
             ClassLoader classLoader = ExtensionLoader.class.getClassLoader();
             urls = classLoader.getResources(fileName);
             if(urls != null) {
-                while (urls.hasMoreElements()) {
-                    URL resourceUrl = urls.nextElement();
-                    // 3. 加载并解析
-                    loadResource(classes, classLoader, resourceUrl);
-                }
-            }
-        } catch (IOException e) {
-            log.error(e.getMessage());
-        }
-    }
-
-    private void loadResource(Map<String, Class<?>> extensionClasses, ClassLoader classLoader, URL resourceUrl) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceUrl.openStream(), UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                final int ci = line.indexOf('#');
-                if (ci >= 0) {
-                    line = line.substring(0, ci);
-                }
-                line = line.trim();
-                if (line.length() > 0) {
-                    try {
-                        final int ei = line.indexOf('=');
-                        String name = line.substring(0, ei).trim();
-                        String clazzName = line.substring(ei + 1).trim();
-                        if (name.length() > 0 && clazzName.length() > 0) {
-                            Class<?> clazz = classLoader.loadClass(clazzName);
-                            extensionClasses.put(name, clazz);
-                        }
-                    } catch (ClassNotFoundException e) {
-                        log.error("加载扩展类出错: " + e.getMessage());
+                while(urls.hasMoreElements()) {
+                    URL url = urls.nextElement();
+                    Object extension = loadExtension(name, url, classLoader);
+                    if(extension != null) {
+                        return (T) extension;
                     }
                 }
             }
+            return null;
+        } catch(IOException e) {
+            log.error("load extension error", e);
+        }
+    }
 
+    private T loadExtension(String name, URL url, ClassLoader classLoader) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceUrl.openStream(), UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if(line.length() > 0) {
+                    try {
+                        final int ei = line.indexOf(':');
+                        String extensionName = line.substring(0, ei).trim();
+                        if(name.equals(extensionName)) {
+                            String className = line.substring(ei + 1).trim();
+                            Class<?> clz = classLoader.loadClass(className);
+
+                        }
+                    } catch (ClassNotFoundException e) {
+                        log.error("load extension class error", e);
+                    }
+                }
+            }
+            return null;
         } catch (IOException e) {
-            log.error(e.getMessage());
+            log.error("load extension error", e);
         }
     }
 }

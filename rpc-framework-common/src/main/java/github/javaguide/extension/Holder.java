@@ -1,14 +1,15 @@
 package github.javaguide.extension;
 
-public class Holder<T> {
 
-    private volatile T value;
+public class Holder {
 
-    public T get() {
-        return value;
+    private volatile Object obj;
+
+    public Object get() {
+        return obj;
     }
 
-    public void set(T value) {
-        this.value = value;
+    public void set(Object obj) {
+        this.obj = obj;
     }
 }
