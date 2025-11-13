@@ -1,5 +1,7 @@
 package github.javaguide.remoting.transport.netty.codec;
 
+import github.javaguide.compress.Compress;
+import github.javaguide.enums.CompressTypeEnum;
 import github.javaguide.enums.SerializationTypeEnum;
 import github.javaguide.extension.ExtensionLoader;
 import github.javaguide.remoting.constants.RpcConstants;
@@ -60,6 +62,9 @@ public class RpcMessageCodec extends MessageToMessageCodec<ByteBuf, RpcMessage> 
             byteBuf.readBytes(bodyBytes);
             String codecName = SerializationTypeEnum.getName(codecType);
             Serializer serializer = ExtensionLoader.getExtensionLoader(Serializer.class).getExtension(codecName);
+
+            String compressName = CompressTypeEnum.getName(compressType);
+            Compress compress = ExtensionLoader.getExtensionLoader(Compress.class).getExtension(compressName);
         }
         list.add(rpcMessage);
     }

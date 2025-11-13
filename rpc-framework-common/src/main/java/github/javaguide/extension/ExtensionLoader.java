@@ -1,5 +1,6 @@
 package github.javaguide.extension;
 
+import github.javaguide.factory.SingletonFactory;
 import github.javaguide.utils.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -90,14 +91,14 @@ public class ExtensionLoader<T> {
                     }
                 }
             }
-            return null;
         } catch(IOException e) {
             log.error("load extension error", e);
         }
+        return null;
     }
 
     private T loadExtension(String name, URL url, ClassLoader classLoader) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(resourceUrl.openStream(), UTF_8))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream(), UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -108,16 +109,18 @@ public class ExtensionLoader<T> {
                         if(name.equals(extensionName)) {
                             String className = line.substring(ei + 1).trim();
                             Class<?> clz = classLoader.loadClass(className);
-
+                            T extension = (T) SingletonFactory.getInstance(clz);
+                            return extension;
                         }
                     } catch (ClassNotFoundException e) {
                         log.error("load extension class error", e);
                     }
                 }
             }
-            return null;
+
         } catch (IOException e) {
             log.error("load extension error", e);
         }
+        return null;
     }
 }
