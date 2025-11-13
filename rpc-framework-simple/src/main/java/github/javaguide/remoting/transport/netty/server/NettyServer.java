@@ -68,7 +68,7 @@ public class NettyServer {
                             // RPCMessage       编解码器
                             p.addLast(rpcMessageCodec);
                             // 可共享的 serverHandler
-//                            p.addLast(serviceHandlerGroup, nettyServerHandler);
+                            p.addLast(serviceHandlerGroup, nettyServerHandler);
                         }
                     });
         } catch (Exception e) {
