@@ -8,6 +8,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.imps.CuratorFrameworkState;
 import org.apache.curator.retry.ExponentialBackoffRetry;
+import org.apache.zookeeper.CreateMode;
 
 import java.net.InetSocketAddress;
 import java.util.Properties;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 public class CuratorUtils {
     private static final Set<String> REGISTERED_PATH_SET = ConcurrentHashMap.newKeySet();
     private static final String DEFAULT_ZOOKEEPER_ADDRESS = "127.0.0.1:2181";
+    public static final String ZK_REGISTER_ROOT_PATH = "/my-rpc";
     private static CuratorFramework zkClient;
     private static final int BASE_SLEEP_TIME = 1000;
     private static final int MAX_RETRIES = 3;
@@ -57,5 +59,18 @@ public class CuratorUtils {
             e.printStackTrace();
         }
         return zkClient;
+    }
+
+    public static void createPersistentNode(CuratorFramework zkClient, String path) {
+        try {
+            if(REGISTERED_PATH_SET.contains(path) || zkClient.checkExists().forPath(path) != null) {
+                log.info("The node already exists. The node path: [{}]", path);
+            } else {
+                zkClient.create().creatingParentsIfNeeded().withMode(CreateMode.PERSISTENT).forPath(path);
+                log.info("The persistent node was created successfully. The node path: [{}]", path);
+            }
+        } catch (Exception e) {
+            log.error("create persistent node for path [{}] fail", path);
+        }
     }
 }
