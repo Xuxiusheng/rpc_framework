@@ -17,14 +17,58 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static github.javaguide.remoting.constants.RpcConstants.HEARTBEAT_REQUEST_TYPE;
+import static github.javaguide.remoting.constants.RpcConstants.HEARTBEAT_RESPONSE_TYPE;
 
 @Slf4j
 @ChannelHandler.Sharable
 public class RpcMessageCodec extends MessageToMessageCodec<ByteBuf, RpcMessage> {
 
+    private static final AtomicInteger ATOMIC_INTEGER = new AtomicInteger(0);
+
     @Override
     protected void encode(ChannelHandlerContext channelHandlerContext, RpcMessage rpcMessage, List<Object> list) throws Exception {
+        ByteBuf out = channelHandlerContext.alloc().buffer();
+        // magic number 4 byte
+        out.writeBytes(RpcConstants.MAGIC_NUMBER);
+        // version 1 byte
+        out.writeByte(RpcConstants.VERSION);
+        // full length 占位
+        out.writeInt(0);
+        // message type 1byte
+        out.writeByte(rpcMessage.getMessageType());
+        // serialize 1 byte
+        out.writeByte(rpcMessage.getCodec());
+        // compress 1byte
+        out.writeByte(CompressTypeEnum.GZIP.getCode());
+        // requestId 4 byte
+        out.writeInt(ATOMIC_INTEGER.getAndIncrement());
 
+        byte[] bodyBytes = null;
+        int fullLength = RpcConstants.HEAD_LENGTH;
+        if(rpcMessage.getMessageType() != HEARTBEAT_REQUEST_TYPE && rpcMessage.getMessageType() != HEARTBEAT_RESPONSE_TYPE) {
+            String serialize = SerializationTypeEnum.getName(rpcMessage.getCodec());
+            Serializer serializer = ExtensionLoader.getExtensionLoader(Serializer.class).getExtension(serialize);
+            bodyBytes = serializer.serialize(rpcMessage.getData());
+            Compress compress = ExtensionLoader.getExtensionLoader(Compress.class).getExtension(CompressTypeEnum.getName(rpcMessage.getCompress()));
+            log.debug("before compress request body size: [{}]", bodyBytes.length);
+            bodyBytes = compress.compress(bodyBytes);
+            log.debug("after compress request body size: [{}]", bodyBytes.length);
+            // 加上请求体长度
+            fullLength += bodyBytes.length;
+        }
+        if(bodyBytes != null) {
+            out.writeBytes(bodyBytes);
+        }
+        // 写入包的长度字段
+        int writeIndex = out.writerIndex();
+        out.writerIndex(RpcConstants.MAGIC_NUMBER.length + 1);
+        out.writeInt(fullLength);
+        out.writerIndex(writeIndex);
+
+        list.add(out);
     }
 
     @Override

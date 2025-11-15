@@ -40,7 +40,11 @@ public class ZkServiceProviderImpl implements ServiceProvider {
 
     @Override
     public Object getService(String rpcServiceName) {
-        return null;
+        Object service = serviceMap.get(rpcServiceName);
+        if(null == service) {
+            throw new RuntimeException("service can not be found: " + rpcServiceName);
+        }
+        return service;
     }
 
     @Override
