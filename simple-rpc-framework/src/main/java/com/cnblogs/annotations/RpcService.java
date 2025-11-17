@@ -11,10 +11,4 @@ public @interface RpcService {
      * @return
      */
     String version() default "";
-
-    /**
-     * 用于区分不同组的同一个接口
-     * @return
-     */
-    String group() default "";
 }

@@ -2,6 +2,7 @@ package com.cnblogs.extension;
 
 import com.cnblogs.annotations.SPI;
 import com.cnblogs.exceptions.FormatException;
+import com.cnblogs.factory.SingletonFactory;
 import org.springframework.util.StringUtils;
 
 import java.io.BufferedReader;
@@ -19,20 +20,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ExtensionLoader<T> {
 
     // 资源根目录
-    private static String RESOURCE_ROOT = "META-INF/extensions/";
+    private static final String RESOURCE_ROOT = "META-INF/extensions/";
 
     // Class类型
     private Class<T> type;
 
     // ExtensionLoader实例
-    private static Map<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<>();
+    private static final Map<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<>();
 
-    private Map<String, Instance<T>> cachedInstances = new ConcurrentHashMap<>();
+    private final Map<String, Instance<T>> cachedInstances = new ConcurrentHashMap<>();
 
-    private Object lock = new Object();
 
-    private ExtensionLoader() {
-
+    private ExtensionLoader(Class<T> type) {
+        this.type = type;
     }
 
     public static <S> ExtensionLoader<S> getExtensionLoader(Class<S> clz) {
@@ -47,7 +47,7 @@ public class ExtensionLoader<T> {
         }
         ExtensionLoader<S> extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(clz);
         if(extensionLoader == null) {
-            EXTENSION_LOADERS.putIfAbsent(clz, new ExtensionLoader<>());
+            EXTENSION_LOADERS.putIfAbsent(clz, new ExtensionLoader<>(clz));
             extensionLoader = (ExtensionLoader<S>) EXTENSION_LOADERS.get(clz);
         }
         return extensionLoader;
@@ -59,8 +59,30 @@ public class ExtensionLoader<T> {
         }
         Instance<T> instance = cachedInstances.get(extensionName);
         if(instance == null) {
-            String resourcePath = RESOURCE_ROOT + type.getPackage().getName();
-            loadResources(resourcePath);
+            cachedInstances.putIfAbsent(extensionName, new Instance<>());
+            instance = cachedInstances.get(extensionName);
+        }
+        T object = instance.get();
+        if(object == null) {
+            synchronized (instance) {
+                object = instance.get(); // 需要再次获取，避免重复创建
+                if(object == null) {
+                    object = createExtension(extensionName);
+                }
+            }
+        }
+        return object;
+    }
+
+    private T createExtension(String extensionName) {
+        if(type == null) {
+            throw new IllegalArgumentException("type should not be null");
+        }
+        String resourcePath = RESOURCE_ROOT + type.getName();
+        loadResources(resourcePath);
+        Instance<T> instance = cachedInstances.get(extensionName);
+        if(instance == null || instance.get() == null) {
+            throw new RuntimeException("can not find extension: " + extensionName);
         }
         return instance.get();
     }
@@ -77,9 +99,19 @@ public class ExtensionLoader<T> {
                 }
                 String key = line.substring(0, idx).trim();
                 String value = line.substring(idx + 1).trim();
+                if(!StringUtils.isEmpty(key) && !StringUtils.isEmpty(value) && !cachedInstances.containsKey(key)) {
+                    Class<?> clz = classLoader.loadClass(value);
+                    T obj = (T) SingletonFactory.getInstance(clz);
+                    Instance<T> instance = cachedInstances.get(key);
+                    if(instance == null) {
+                        cachedInstances.putIfAbsent(key, new Instance<>());
+                        instance = cachedInstances.get(key);
+                    }
+                    instance.set(obj);
+                }
             }
         } catch (Exception e) {
-
+            throw new RuntimeException("load extension file error", e);
         }
     }
 }

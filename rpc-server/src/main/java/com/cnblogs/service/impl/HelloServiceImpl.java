@@ -6,7 +6,7 @@ import com.cnblogs.annotations.RpcService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@RpcService(version = "v.1", group = "g.1")
+@RpcService(version = "v.1")
 public class HelloServiceImpl implements HelloService {
 
     @Override
